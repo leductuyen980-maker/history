@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>章节式文本阅读工具</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: "微软雅黑", sans-serif;
+        }
+        body {
+            display: flex;
+            height: 100vh;
+            background-color: #f5f5f5;
+            overflow: hidden;
+        }
+
+        /* 1. 章节列表（固定宽度，位置不变） */
+        .chapter-list {
+            width: 280px;
+            background-color: #fff;
+            border-right: 1px solid #e0e0e0;
+            padding: 20px;
+            overflow-y: auto;
+            height: 100vh;
+            flex-shrink: 0; /* 固定宽度，不收缩 */
+        }
+        .chapter-list h2 {
+            margin-bottom: 20px;
+            color: #333;
+            border-bottom: 2px solid #4285f4;
+            padding-bottom: 10px;
+        }
+        .chapter-item {
+            padding: 10px 15px;
+            margin-bottom: 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            color: #555;
+        }
+        .chapter-item:hover {
+            background-color: #f0f7ff;
+        }
+        .chapter-item.active {
+            background-color: #4285f4;
+            color: #fff;
+        }
+
+        /* 进度条（位置不变） */
+        .chapter-progress-container {
+            width: 100%;
+            margin: 20px 0;
+        }
+        .chapter-progress-text {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .chapter-progress-bar {
+            width: 100%;
+            height: 8px;
+            background-color: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .chapter-progress-fill {
+            height: 100%;
+            background-color: #4285f4;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        /* 2. 标注面板折叠按钮（固定在章节列表右侧，位置永不改变） */
+        .toggle-annotation-btn {
+            width: 30px;
+            height: 100vh;
+            background-color: #fff;
+            border-right: 1px solid #e0e0e0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 18px;
+            color: #666;
+            flex-shrink: 0; /* 固定宽度，不收缩 */
+        }
+
+        /* 3. 标注面板（默认完全隐藏，点击按钮后完全显示，不偏移） */
+        .annotation-panel {
+            width: 320px;
+            background-color: #fff;
+            border-right: 1px solid #e0e0e0;
+            padding: 20px;
+            overflow-y: auto;
+            height: 100vh;
+            display: none; /* 默认完全隐藏 */
+            flex-shrink: 0; /* 固定宽度，不收缩 */
+        }
+        .annotation-panel.show {
+            display: block; /* 点击后完全显示 */
+        }
+        .annotation-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #e0e0e0;
+            padding-bottom: 10px;
+        }
+        .annotation-item {
+            padding: 10px;
+            margin-bottom: 10px;
+            background-color: #f8f9fa;
+            border-radius: 6px;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        .annotation-chapter {
+            color: #4285f4;
+            font-size: 12px;
+            margin-bottom: 5px;
+        }
+
+        /* 4. 左侧容器（章节列表+按钮+标注面板） */
+        .left-container {
+            display: flex;
+            height: 100vh;
+        }
+
+        /* 5. 阅读区域（始终占满剩余空间，不受左侧任何元素影响） */
+        .read-area {
+            flex: 1; /* 永远占满右侧所有空间 */
+            padding: 30px;
+            overflow-y: auto;
+            height: 100vh;
+        }
+        .progress-text {
+            margin-bottom: 15px;
+            color: #666;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        .content-box {
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            line-height: 1.8;
+            font-size: 16px;
+            color: #333;
+            white-space: pre-wrap;
+            min-height: calc(100% - 40px);
+        }
+
+        /* 高亮样式（不变） */
+        .highlight {
+            background-color: #fff3cd;
+            padding: 2px 0;
+            border-radius: 2px;
+        }
+
+        /* 右键菜单（不变） */
+        .custom-contextmenu {
+            position: absolute;
+            width: 180px;
+            background-color: #fff;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            z-index: 9999;
+            display: none;
+        }
+        .contextmenu-item {
+            padding: 8px 15px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .contextmenu-item:hover {
+            background-color: #f0f7ff;
+        }
+        .contextmenu-divider {
+            height: 1px;
+            background-color: #e0e0e0;
+            margin: 4px 0;
+        }
+
+        /* 按钮样式（不变） */
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .btn-primary {
+            background-color: #4285f4;
+            color: #fff;
+        }
+        .btn-secondary {
+            background-color: #e0e0e0;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <!-- 左侧容器：章节列表+按钮+标注面板 -->
+    <div class="left-container">
+        <!-- 章节列表（位置不变） -->
+        <div class="chapter-list" id="chapterList">
+            <h2>章节列表</h2>
+            <!-- 进度条 -->
+            <div class="chapter-progress-container">
+                <div class="chapter-progress-text" id="chapterProgressText">
+                    <span>整体进度</span>
+                    <span>0/0</span>
+                </div>
+                <div class="chapter-progress-bar">
+                    <div class="chapter-progress-fill" id="chapterProgressFill"></div>
+                </div>
+            </div>
+            <!-- 章节项自动生成 -->
+        </div>
+
+        <!-- 折叠按钮（位置固定） -->
+        <div class="toggle-annotation-btn" id="toggleAnnotationBtn">▶</div>
+
+        <!-- 标注面板（默认隐藏） -->
+        <div class="annotation-panel" id="annotationPanel">
+            <div class="annotation-header">
+                <h3>我的标注</h3>
+                <button class="btn btn-secondary" id="clearAllAnnotationBtn">清空所有标注</button>
+            </div>
+            <div id="annotationList">
+                暂无标注内容
+            </div>
+        </div>
+    </div>
+
+    <!-- 阅读区域（不受左侧影响） -->
+    <div class="read-area" id="readArea">
+        <div class="progress-text" id="progressText">请选择左侧章节开始阅读</div>
+        <div class="content-box" id="contentBox">
+            请从左侧选择要阅读的章节...
+        </div>
+    </div>
+
+    <!-- 右键菜单（不变） -->
+    <div class="custom-contextmenu" id="customContextmenu">
+        <div class="contextmenu-item" id="menuHighlight">高亮选中文字</div>
+        <div class="contextmenu-item" id="menuClearHighlight">清除选中高亮</div>
+        <div class="contextmenu-divider"></div>
+        <div class="contextmenu-item" id="menuCancel">取消</div>
+    </div>
+
+    <script>
+        // 核心变量（完全不变）
+        const chapterDir = 'chapters/';
+        let currentChapter = '';
+        let currentChapterIndex = 0;
+        let chapters = [];
+        let highlights = JSON.parse(localStorage.getItem('highlights')) || {};
+        let annotations = JSON.parse(localStorage.getItem('annotations')) || [];
+        const contextmenu = document.getElementById('customContextmenu');
+        let cachedSelectedText = '';
+
+        // 1. 解码文件名（不变）
+        function decodeFileName(encodedName) {
+            try {
+                return decodeURIComponent(encodedName);
+            } catch (e) {
+                return encodedName;
+            }
+        }
+
+        // 2. 章节排序（不变）
+        function getChapterSortNumber(chapterName) {
+            const pMatch = chapterName.match(/P(\d+)/);
+            const numMatch = chapterName.match(/-(\d+)-/);
+            const pNum = pMatch ? parseInt(pMatch[1], 10) : 999;
+            const subNum = numMatch ? parseInt(numMatch[1], 10) : 99;
+            return pNum * 100 + subNum;
+        }
+
+        // 3. 清理特殊字符（不变）
+        function cleanSpecialChars(content) {
+            const specialCharsRegex = /[#\*\-_~`]/g;
+            return content.replace(specialCharsRegex, '');
+        }
+
+        // 4. 初始化（仅修改这里：读取filelist.json而不是遍历文件夹）
+        async function init() {
+            try {
+                // 【核心修改】读取我们自动生成的filelist.json，拿到所有文件名
+                const response = await fetch('./filelist.json');
+                if (!response.ok) throw new Error('无法访问filelist.json，请确保文件已正确上传');
+                
+                const { files } = await response.json();
+                chapters = [];
+
+                // 【核心修改】直接从filelist.json里读取文件名，不用解析HTML
+                files.forEach(encodedFileName => {
+                    let decodedFileName = decodeFileName(encodedFileName);
+                    let chapterName = decodedFileName.replace(/\.txt$/i, '');
+                    chapters.push({
+                        name: chapterName,
+                        file: encodedFileName
+                    });
+                });
+
+                // 排序（完全不变）
+                chapters.sort((a, b) => {
+                    const numA = getChapterSortNumber(a.name);
+                    const numB = getChapterSortNumber(b.name);
+                    return numA - numB;
+                });
+
+                renderChapterList();
+                renderAnnotationList();
+                updateChapterProgressBar(0, chapters.length);
+
+                // 加载上次章节（完全不变）
+                const lastChapter = localStorage.getItem('lastChapter');
+                if (lastChapter && chapters.some(c => c.name === lastChapter)) {
+                    loadChapter(lastChapter);
+                }
+
+                bindEvents();
+
+            } catch (error) {
+                document.getElementById('contentBox').innerHTML = `
+                    <p style="color: red;">加载失败：${error.message}</p>
+                    <p>解决方法：</p>
+                    <ol>
+                        <li>确保chapters文件夹存在且有txt文件</li>
+                        <li>确保filelist.json已正确生成并上传到仓库根目录</li>
+                        <li>使用本地服务器运行（终端进入当前文件夹，执行：python -m http.server）</li>
+                        <li>访问 http://localhost:8000/index.html</li>
+                    </ol>
+                `;
+                console.error('初始化失败：', error);
+            }
+        }
+
+        // 5. 渲染章节列表（不变）
+        function renderChapterList() {
+            const chapterListEl = document.getElementById('chapterList');
+            const progressContainer = chapterListEl.querySelector('.chapter-progress-container');
+            chapterListEl.innerHTML = '<h2>章节列表</h2>';
+            chapterListEl.appendChild(progressContainer);
+            
+            chapters.forEach((chapter, index) => {
+                const chapterItem = document.createElement('div');
+                chapterItem.className = `chapter-item ${currentChapter === chapter.name ? 'active' : ''}`;
+                chapterItem.textContent = chapter.name;
+                chapterItem.onclick = () => loadChapter(chapter.name, index + 1);
+                chapterListEl.appendChild(chapterItem);
+            });
+        }
+
+        // 6. 加载章节（不变）
+        async function loadChapter(chapterName, chapterIndex) {
+            currentChapter = chapterName;
+            currentChapterIndex = chapterIndex || chapters.findIndex(c => c.name === chapterName) + 1;
+            localStorage.setItem('lastChapter', chapterName);
+            renderChapterList();
+            updateChapterProgressBar(currentChapterIndex, chapters.length);
+
+            const chapter = chapters.find(c => c.name === chapterName);
+            if (!chapter) return;
+
+            try {
+                const response = await fetch(`${chapterDir}${chapter.file}`);
+                let content = await response.text();
+                content = cleanSpecialChars(content);
+                
+                const contentBox = document.getElementById('contentBox');
+                contentBox.textContent = content; 
+                
+                if (highlights[chapterName]) {
+                    highlights[chapterName].forEach(highlightText => {
+                        highlightTextInContent(highlightText, false);
+                    });
+                }
+
+                updateReadProgress();
+
+            } catch (error) {
+                document.getElementById('contentBox').innerHTML = `<p style="color: red;">加载章节失败：${error.message}</p>`;
+                console.error('加载章节失败：', error);
+            }
+        }
+
+        // 7. 进度条更新（不变）
+        function updateChapterProgressBar(currentIndex, totalChapters) {
+            const progressFill = document.getElementById('chapterProgressFill');
+            const progressText = document.getElementById('chapterProgressText');
+            const percent = totalChapters > 0 ? (currentIndex / totalChapters) * 100 : 0;
+            progressFill.style.width = `${percent}%`;
+            progressText.innerHTML = `
+                <span>整体进度</span>
+                <span>${currentIndex}/${totalChapters}</span>
+            `;
+        }
+
+        // 8. 进度文本（不变）
+        function updateReadProgress() {
+            if (!currentChapter || chapters.length === 0) {
+                document.getElementById('progressText').textContent = '请选择左侧章节开始阅读';
+                return;
+            }
+
+            const totalChapters = chapters.length;
+            const chapterProgress = `${currentChapterIndex}/${totalChapters}`;
+            document.getElementById('progressText').textContent = 
+                `当前章节：${currentChapter} | 整体进度：${chapterProgress}`;
+        }
+
+        // 9. 事件绑定（仅修改标注面板的显示逻辑）
+        function bindEvents() {
+            const contentBox = document.getElementById('contentBox');
+
+            // 缓存选中文字（不变）
+            contentBox.addEventListener('mouseup', () => {
+                const selection = window.getSelection();
+                cachedSelectedText = selection.toString().trim();
+            });
+
+            // 右键菜单（不变）
+            contentBox.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                if (cachedSelectedText) {
+                    const menuX = e.clientX;
+                    const menuY = e.clientY;
+                    const maxX = window.innerWidth - contextmenu.offsetWidth;
+                    const maxY = window.innerHeight - contextmenu.offsetHeight;
+                    contextmenu.style.left = `${Math.min(menuX, maxX)}px`;
+                    contextmenu.style.top = `${Math.min(menuY, maxY)}px`;
+                    contextmenu.style.display = 'block';
+                }
+            });
+
+            // 高亮（不变）
+            document.getElementById('menuHighlight').onclick = () => {
+                if (!currentChapter) {
+                    alert('请先选择章节！');
+                    contextmenu.style.display = 'none';
+                    return;
+                }
+                if (!cachedSelectedText) {
+                    alert('请先选中要高亮的文字！');
+                    contextmenu.style.display = 'none';
+                    return;
+                }
+                highlightTextInContent(cachedSelectedText, true);
+                contextmenu.style.display = 'none';
+                cachedSelectedText = '';
+            };
+
+            // 清除高亮（不变）
+            document.getElementById('menuClearHighlight').onclick = () => {
+                if (!currentChapter) {
+                    alert('请先选择章节！');
+                    contextmenu.style.display = 'none';
+                    return;
+                }
+                if (!cachedSelectedText) {
+                    alert('请先选中要清除的高亮文字！');
+                    contextmenu.style.display = 'none';
+                    return;
+                }
+                clearSelectedHighlight(cachedSelectedText);
+                contextmenu.style.display = 'none';
+                cachedSelectedText = '';
+            };
+
+            document.getElementById('menuCancel').onclick = () => {
+                contextmenu.style.display = 'none';
+                cachedSelectedText = '';
+            };
+
+            document.addEventListener('click', (e) => {
+                if (!contextmenu.contains(e.target)) {
+                    contextmenu.style.display = 'none';
+                    cachedSelectedText = '';
+                }
+            });
+
+            // 标注面板显示/隐藏逻辑（核心修改：完全显示/消失）
+            const toggleBtn = document.getElementById('toggleAnnotationBtn');
+            const panel = document.getElementById('annotationPanel');
+            toggleBtn.onclick = () => {
+                // 切换显示/隐藏
+                if (panel.classList.contains('show')) {
+                    panel.classList.remove('show');
+                    toggleBtn.textContent = '▶'; // 显示展开图标
+                } else {
+                    panel.classList.add('show');
+                    toggleBtn.textContent = '◀'; // 显示收起图标
+                }
+            };
+        }
+
+        // 10. 高亮文本（不变）
+        function highlightTextInContent(text, addToAnnotation) {
+            const contentBox = document.getElementById('contentBox');
+            const content = contentBox.textContent;
+            const escapedText = text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const regex = new RegExp(`(${escapedText})`, 'g');
+            contentBox.innerHTML = content.replace(regex, '<span class="highlight">$1</span>');
+
+            if (!highlights[currentChapter]) {
+                highlights[currentChapter] = [];
+            }
+            if (!highlights[currentChapter].includes(text)) {
+                highlights[currentChapter].push(text);
+                localStorage.setItem('highlights', JSON.stringify(highlights));
+            }
+
+            if (addToAnnotation) {
+                const annotation = {
+                    chapter: currentChapter,
+                    text: text,
+                    time: new Date().toLocaleString()
+                };
+                annotations.push(annotation);
+                localStorage.setItem('annotations', JSON.stringify(annotations));
+                renderAnnotationList();
+            }
+        }
+
+        // 11. 清除高亮（不变）
+        function clearSelectedHighlight(text) {
+            const contentBox = document.getElementById('contentBox');
+            const content = contentBox.innerHTML;
+            const escapedText = text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const regex = new RegExp(`<span class="highlight">(${escapedText})</span>`, 'g');
+            contentBox.innerHTML = content.replace(regex, '$1');
+
+            if (highlights[currentChapter]) {
+                highlights[currentChapter] = highlights[currentChapter].filter(item => item !== text);
+                if (highlights[currentChapter].length === 0) {
+                    delete highlights[currentChapter];
+                }
+                localStorage.setItem('highlights', JSON.stringify(highlights));
+            }
+
+            annotations = annotations.filter(anno => !(anno.chapter === currentChapter && anno.text === text));
+            localStorage.setItem('annotations', JSON.stringify(annotations));
+            renderAnnotationList();
+        }
+
+        // 12. 渲染标注（不变）
+        function renderAnnotationList() {
+            const annotationListEl = document.getElementById('annotationList');
+            
+            if (annotations.length === 0) {
+                annotationListEl.innerHTML = '<p style="color: #999;">暂无标注内容</p>';
+                return;
+            }
+
+            annotationListEl.innerHTML = '';
+            annotations.forEach((anno, index) => {
+                const annoItem = document.createElement('div');
+                annoItem.className = 'annotation-item';
+                annoItem.innerHTML = `
+                    <div class="annotation-chapter">${anno.chapter} · ${anno.time}</div>
+                    <div>${anno.text}</div>
+                    <button class="btn btn-secondary" style="margin-top: 8px; padding: 4px 8px; font-size: 12px;" 
+                            onclick="deleteAnnotation(${index})">删除</button>
+                `;
+                annotationListEl.appendChild(annoItem);
+            });
+        }
+
+        // 13. 删除标注（不变）
+        function deleteAnnotation(index) {
+            const deletedAnno = annotations[index];
+            annotations.splice(index, 1);
+            localStorage.setItem('annotations', JSON.stringify(annotations));
+            renderAnnotationList();
+            
+            if (deletedAnno && highlights[deletedAnno.chapter]) {
+                highlights[deletedAnno.chapter] = highlights[deletedAnno.chapter].filter(
+                    text => text !== deletedAnno.text
+                );
+                if (highlights[deletedAnno.chapter].length === 0) {
+                    delete highlights[deletedAnno.chapter];
+                }
+                localStorage.setItem('highlights', JSON.stringify(highlights));
+                
+                if (currentChapter === deletedAnno.chapter) {
+                    loadChapter(currentChapter);
+                }
+            }
+        }
+
+        // 14. 清空标注（不变）
+        function clearAllAnnotations() {
+            if (confirm('确定要清空所有标注吗？此操作不可恢复！')) {
+                annotations = [];
+                highlights = {};
+                localStorage.setItem('annotations', JSON.stringify(annotations));
+                localStorage.setItem('highlights', JSON.stringify(highlights));
+                renderAnnotationList();
+                
+                if (currentChapter) {
+                    loadChapter(currentChapter);
+                }
+            }
+        }
+
+        // 绑定清空按钮（不变）
+        document.getElementById('clearAllAnnotationBtn').onclick = clearAllAnnotations;
+
+        // 初始化（不变）
+        window.onload = init;
+    </script>
+</body>
+</html>
